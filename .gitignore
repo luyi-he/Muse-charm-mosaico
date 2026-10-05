@@ -1,0 +1,15 @@
+**/build*/
+**/managed_components/
+**/sdkconfig
+**/sdkconfig.old
+**/.codex-runs/
+**/__pycache__/
+**/*.py[cod]
+**/local_secrets.h
+**/sdkconfig.secrets.defaults
+**/*token*.txt
+.env
+.env.*
+.mosaico-state/
+.tools/
+projects/**/characters/

@@ -1,0 +1,9 @@
+{
+  "model": "qwen3-tts-flash-realtime",
+  "voice": "Cherry",
+  "sample_rate": 16000,
+  "status": "completed",
+  "bytes": 123312,
+  "first_audio_seconds": 0.602,
+  "audio_seconds": 3.8535
+}
