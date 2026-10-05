@@ -2,7 +2,13 @@
 
 A voice AI companion for ESP-Mosaico, powered by Muse Gadget SDK and configurable TTS. Hold the top AI button to talk and release to send.
 
-[中文](README.md) · [Build](docs/BUILDING.md)
+[中文](README.md) · [Illustrated setup guide (Chinese)](docs/SETUP_CN.md) · [Build](docs/BUILDING.md)
+
+## Device demo
+
+[![Watch the device demo](docs/assets/setup/12-muse-online.png)](https://github.com/samyeei/Muse-charm-mosaico/raw/refs/heads/main/docs/assets/demo/muse-charm-demo.mp4)
+
+[Watch / download the demo](https://github.com/samyeei/Muse-charm-mosaico/raw/refs/heads/main/docs/assets/demo/muse-charm-demo.mp4): about 39 seconds, with audio. Shows conversation, character motion and settings. Recording location metadata was removed and the background header was blurred.
 
 Features: a black background and original cream plush character with eight animated states; Qwen3-TTS-Flash-Realtime / Cherry; optional SiliconFlow and OpenAI-compatible PCM services; Chinese/English settings; live volume and brightness sliders; adjustable speech rate, auto pagination and screen timeout; touch and motion wake-up; phone provisioning over a password-free device hotspot; Muse-generated character previews and resource updates.
 
