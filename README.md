@@ -1,6 +1,6 @@
 # Muse Charm · Mosaico
 
-ESP-Mosaico 上的可爱语音 AI 伙伴。按住设备上方 AI 键说话，松开发送，由 Muse 回答并用千问语音朗读。
+基于 Muse Gadget SDK 的 ESP-Mosaico 语音 AI 伙伴，支持按键对话、千问语音朗读、八种角色动态、中英文界面与手机 Wi-Fi 配置，也能通过 Muse 生成并更换角色形象。
 
 ![初始角色](projects/muse_companion/ui/assets/idle.png)
 
@@ -25,6 +25,14 @@ ESP-Mosaico 上的可爱语音 AI 伙伴。按住设备上方 AI 键说话，松
 ## 需要准备
 
 ESP-Mosaico 裸机、USB 数据线、Muse 手机 App 与 Muse Gadget SDK token，以及阿里百炼 API Key（北京地域）或其他兼容 TTS 服务凭据。每位使用者填写自己的凭据，仓库与固件不包含作者的 token、配对和 Wi-Fi 数据。当前版本不需要扩展插件；不支持视频播放，自动环境光亮度尚未接入。
+
+## 让本地 Agent 帮你安装
+
+把设备通过 USB 数据线连接电脑，打开可访问本机 USB 的 Codex 或其他本地 Agent，直接发送下面这句话：
+
+> 请将 https://github.com/samyeei/Muse-charm-mosaico 的最新版固件安装到我通过 USB 连接的 ESP-Mosaico：阅读仓库说明，自动下载代码、准备依赖并通过 mosaico.py 和仓库提供的完整固件包完成 system-update，保留设备身份、已有凭据与配对信息，不要整片擦除 Flash，安装后检查设备正常启动，并告诉我如何连接设备热点、打开 192.168.4.1 完成首次配置。
+
+Agent 需要本地文件、网络与设备访问能力，可能会提示你授予权限或操作设备进入恢复模式。安装完成后，在手机配置页填写自己的凭据，详见 [手机配置图文教程](docs/SETUP_CN.md)。
 
 ## 直接安装
 
