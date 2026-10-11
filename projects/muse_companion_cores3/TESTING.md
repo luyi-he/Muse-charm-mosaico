@@ -69,3 +69,8 @@ Whisper and default Windows TTS run locally.
   owner preference for the new voice remain to be checked.
 - Regression coverage includes OpenAI streaming/resampling, quota errors,
   Gemini sample framing/completion, partial USB JSON and Qwen early playback.
+
+- Owner requested local speech again. Windows native SpeechSynthesizer enumerated
+  Huihui, Yaoyao and Kangkang. Each synthesized a Chinese sentence successfully
+  in about one second; WAV decoding/resampling produced 16 kHz mono PCM.
+  Page exposes all three installed voices. Current mode is local STT/Windows TTS.

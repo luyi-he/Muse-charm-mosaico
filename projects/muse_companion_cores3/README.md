@@ -39,7 +39,8 @@ Codex 使用电脑已有的 CLI 登录；推理仍通过该账号连接云端服
 - Gemini：`gemini-3.5-flash-lite` 识别，`gemini-3.8-flash-lite-tts` 流式朗读，默认 Aoede，页面可换声音。
 - OpenAI：`gpt-4o-mini-transcribe` 识别，`gpt-4o-mini-tts` 流式朗读，默认 Marin。
 - Qwen：本地 Whisper 识别，Qwen3-TTS-Flash-Realtime / Cherry 流式朗读。
-- 默认：本地 Whisper base（CPU/int8）和 Windows 中文朗读。
+- 默认：本地 Whisper base（CPU/int8）和 Windows 中文朗读。页面列出本机已安装的中文声音。
+  此电脑可用慧慧、瑶瑶（女声）和康康（男声），通过 Windows 原生语音接口生成。
 
 云端音频服务使用各自的 API 密钥，受余额和配额限制，不能共用 Codex 订阅。
 音频收到后即通过 USB 播放；OpenAI PCM 从 24 kHz 重采样到设备的 16 kHz，

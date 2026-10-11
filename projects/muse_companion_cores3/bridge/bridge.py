@@ -30,17 +30,27 @@ from audio_api import transcribe as openai_stt, speak as openai_tts
 from gemini_audio import transcribe as gemini_stt, speak as gemini_tts
 
 
-def windows_tts(text):
+def windows_voices():
+    result=subprocess.run(["powershell.exe","-NoProfile","-File",str(Path(__file__).with_name("speak.ps1")),"-ListVoices"],check=True,capture_output=True,text=True,timeout=15,creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+    return json.loads(result.stdout)
+
+
+def windows_tts(text,voice="Microsoft Huihui"):
     with tempfile.TemporaryDirectory(prefix="cores3-voice-") as temp:
         source=Path(temp)/"text.txt";target=Path(temp)/"voice.wav"
         source.write_text(text,encoding="utf-8")
         subprocess.run(["powershell.exe","-NoProfile","-File",str(Path(__file__).with_name("speak.ps1")),
-            "-TextPath",str(source),"-WavePath",str(target)],check=True,timeout=90,
+            "-TextPath",str(source),"-WavePath",str(target),"-Voice",voice],check=True,timeout=90,
             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
-        with wave.open(str(target),"rb") as f:
-            if (f.getnchannels(),f.getsampwidth(),f.getframerate())!=(1,2,16000):raise ValueError("Wrong TTS audio format")
-            return f.readframes(f.getnframes())
+        import av
+        result=[];resampler=av.AudioResampler(format='s16',layout='mono',rate=16000)
+        with av.open(str(target)) as container:
+            for frame in container.decode(audio=0):
+                for chunk in resampler.resample(frame):result.append(bytes(chunk.planes[0])[:chunk.samples*2])
+            for chunk in resampler.resample(None):result.append(bytes(chunk.planes[0])[:chunk.samples*2])
+        return b''.join(result)
+
 
 
 async def qwen_tts(text,key,on_audio=None,current=lambda:True):
@@ -77,6 +87,7 @@ class Bridge:
         self.stt_mode='openai' if self.openai_key else 'local'
         self.gemini_key=os.environ.get('GEMINI_API_KEY','');self.gemini_voice='Aoede'
         if self.gemini_key:self.tts_mode='gemini';self.stt_mode='gemini'
+        self.windows_voices=windows_voices();self.windows_voice='Microsoft Huihui' if 'Microsoft Huihui' in self.windows_voices else next(iter(self.windows_voices),'')
         self.chat_title='CoreS3 语音助手'
         self.gen=0;self.muted=False;self.pcm=bytearray();self.jobs=queue.Queue(maxsize=2);self.pending_text=None
         self.acks=queue.Queue();self.tx=threading.Lock();self.alive=True;self.ready=False;self.last_reply=""
@@ -202,7 +213,7 @@ class Bridge:
                             if not self.key:raise ValueError('请先填写百炼 API Key')
                             asyncio.run(qwen_tts(answer,self.key,stream,lambda:gen==self.gen))
                         if first and gen==self.gen:raise RuntimeError("语音服务没有返回音频")
-                    else:self.playback(windows_tts(answer),gen)
+                    else:self.playback(windows_tts(answer,self.windows_voice),gen)
                 if gen==self.gen:self.send("done",generation=gen);self.status="USB Codex 已就绪"
             except Exception as exc:
                 self.status=str(exc);self.logs.append(str(exc))
@@ -229,7 +240,7 @@ def serve(bridge,port):
             if self.path=="/":return self.respond(200,PAGE.replace("NONCE",bridge.web_nonce).encode(),"text/html")
             if self.path=="/status":return self.respond(200,json.dumps({"status":bridge.status,"heard":bridge.last_text,
                 "reply":bridge.reply,"battery":getattr(bridge,"battery",-1),"tts":bridge.tts_mode,
-                "stt":bridge.stt_mode,"selected":bridge.codex.selected,"chat_title":bridge.codex.selected_title,
+                "stt":bridge.stt_mode,"windows_voice":bridge.windows_voice,"windows_voices":bridge.windows_voices,"selected":bridge.codex.selected,"chat_title":bridge.codex.selected_title,
                 "logs":"\n".join(bridge.logs)},ensure_ascii=False).encode())
             try:
                 if self.path=='/chats':return self.respond(200,json.dumps(bridge.codex.list_chats(),ensure_ascii=False).encode())
@@ -250,6 +261,8 @@ def serve(bridge,port):
                 elif self.path=='/audio':
                     tts=data.get('tts',bridge.tts_mode);stt=data.get('stt',bridge.stt_mode);voice=data.get('voice',bridge.voice)
                     if tts not in ('openai','qwen','windows','gemini') or stt not in ('openai','local','gemini') or voice not in ('coral','marin','cedar','alloy','shimmer'):raise ValueError()
+                    windows_voice=data.get('windows_voice',bridge.windows_voice)
+                    if windows_voice not in bridge.windows_voices:raise ValueError('电脑未安装这个声音')
                     gemini_voice=data.get('gemini_voice',bridge.gemini_voice)
                     if gemini_voice not in ('Aoede','Kore','Puck','Leda','Zephyr'):raise ValueError()
                     if data.get('openai_key'):bridge.openai_key=data['openai_key'].strip()
@@ -258,7 +271,7 @@ def serve(bridge,port):
                     if (tts=='gemini' or stt=='gemini') and not bridge.gemini_key:raise ValueError('请先填写 Gemini API Key')
                     if (tts=='openai' or stt=='openai') and not bridge.openai_key:raise ValueError('请先填写 OpenAI API Key')
                     if tts=='qwen' and not bridge.key:raise ValueError('请先填写百炼 API Key')
-                    bridge.tts_mode=tts;bridge.stt_mode=stt;bridge.voice=voice;bridge.gemini_voice=gemini_voice
+                    bridge.tts_mode=tts;bridge.stt_mode=stt;bridge.voice=voice;bridge.gemini_voice=gemini_voice;bridge.windows_voice=windows_voice
                 elif self.path in ('/select','/create'):
                     if not bridge.codex.operation.acquire(blocking=False):return self.respond(409,b'{"error":"Codex is responding; try again shortly"}')
                     try:
