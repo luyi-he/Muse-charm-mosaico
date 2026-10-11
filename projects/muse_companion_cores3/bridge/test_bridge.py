@@ -4,6 +4,7 @@ import asyncio
 import collections
 import json
 import queue
+import threading
 import unittest
 from unittest.mock import patch
 import serial
@@ -28,9 +29,37 @@ class FramingTest(unittest.TestCase):
         bridge.gen=0;bridge.pcm=bytearray();bridge.jobs=queue.Queue(2)
         bridge.serial=SerialChunks([b"\n",b"device log\n",frame("recording"),
             record[:31],b"",record[31:],frame("recording_end")])
+        bridge.reconnect=lambda: setattr(bridge,"alive",False)
         bridge.read()
         self.assertEqual(bridge.jobs.get_nowait(),(7,pcm,False))
-        self.assertEqual(list(bridge.logs),["device log"])
+        self.assertEqual(list(bridge.logs),["device log","USB 连接中断，等待自动重连"])
+
+    def test_usb_reconnect_discards_partial_record_and_recovers_heartbeat(self):
+        bridge=Bridge.__new__(Bridge)
+        bridge.alive=True;bridge.connected=True;bridge.gen=7;bridge.pending_text='old question'
+        bridge.logs=collections.deque(maxlen=40);bridge.pcm=bytearray(b'old audio')
+        bridge.tx=threading.Lock();bridge.jobs=queue.Queue(2);bridge.status='ready'
+        class Serial:
+            is_open=True;opens=0;reads=0
+            def close(self):self.is_open=False
+            def open(self):
+                self.opens+=1
+                if self.opens==1:raise serial.SerialException('not yet available')
+                self.is_open=True
+            def read_until(self,end):
+                self.reads+=1
+                if self.reads==1:return b'@cores3 {"type":"hel'
+                if self.reads==2:raise serial.SerialException('USB unplugged')
+                if self.reads==3:return b'@cores3 {"type":"hello","battery":75}\n'
+                bridge.alive=False;return b''
+        bridge.serial=Serial()
+        with patch('bridge.time.sleep'):bridge.read()
+        self.assertEqual(bridge.serial.opens,2)
+        self.assertEqual(bridge.battery,75)
+        self.assertEqual(bridge.status,'USB Codex 已就绪')
+        self.assertIsNone(bridge.pending_text)
+        self.assertEqual(bridge.pcm,bytearray())
+        self.assertTrue(bridge.jobs.empty(),'old requests must not be replayed')
 
     def test_qwen_plays_before_response_completion(self):
         played=[]

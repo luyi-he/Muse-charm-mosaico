@@ -92,7 +92,7 @@ class Bridge:
         self.gen=0;self.muted=False;self.pcm=bytearray();self.jobs=queue.Queue(maxsize=2);self.pending_text=None
         self.acks=queue.Queue();self.tx=threading.Lock();self.alive=True;self.ready=False;self.last_reply=""
         self.serial=serial.Serial(baudrate=115200,timeout=.25,write_timeout=5)
-        self.serial.dtr=False;self.serial.rts=False;self.serial.port=port;self.serial.open()
+        self.serial.dtr=False;self.serial.rts=False;self.serial.port=port;self.serial.open();self.connected=True
         threading.Thread(target=self.read,daemon=True).start()
         self.codex=Codex(cwd)
         self.status="正在加载本地语音识别"
@@ -104,12 +104,35 @@ class Bridge:
 
     def send(self,type,**fields):
         obj={"type":type,"generation":self.gen,**fields}
-        with self.tx:self.serial.write((json.dumps(obj,ensure_ascii=False)+"\n").encode())
+        with self.tx:
+            if not self.connected:raise serial.SerialException('USB disconnected')
+            self.serial.write((json.dumps(obj,ensure_ascii=False)+"\n").encode())
+
+    def disconnected(self):
+        if getattr(self,'connected',True):
+            self.connected=False;self.gen+=1;self.pcm=bytearray();self.pending_text=None
+            self.logs.append('USB 连接中断，等待自动重连')
+        self.status='USB 已断开，正在自动重连'
+
+    def reconnect(self):
+        with self.tx:
+            try:
+                if self.serial.is_open:self.serial.close()
+                self.serial.open()
+            except (serial.SerialException,OSError):return False
+            self.connected=True;self.pcm=bytearray()
+        self.logs.append('USB 串口已重新打开，等待设备心跳')
+        self.status='等待设备心跳'
+        return True
+
+    def send_error(self,gen,text):
+        try:self.send('error',generation=gen,text=text)
+        except (serial.SerialException,OSError):self.disconnected()
 
     def heartbeat(self):
         while self.alive:
             try:self.send("hello")
-            except (serial.SerialException,OSError):self.status="USB 已断开";self.alive=False;break
+            except (serial.SerialException,OSError):self.disconnected()
             time.sleep(3)
 
     def enqueue(self,job):
@@ -119,8 +142,11 @@ class Bridge:
     def read(self):
         buffered=bytearray()
         while self.alive:
+            if not getattr(self,'connected',True):
+                if not self.reconnect():time.sleep(1);continue
             try:chunk=self.serial.read_until(b"\n")
-            except (serial.SerialException,OSError):self.status="USB 已断开";self.alive=False;break
+            except (serial.SerialException,OSError):
+                buffered.clear();self.disconnected();continue
             if not chunk:continue
             buffered.extend(chunk)
             if len(buffered)>8192:buffered.clear();continue
@@ -135,6 +161,7 @@ class Bridge:
             kind=obj.get("type");gen=obj.get("generation",0)
             if kind=="hello":
                 self.muted=obj.get("muted",False);self.battery=obj.get("battery",-1)
+                if self.status=='等待设备心跳':self.status='USB Codex 已就绪';self.logs.append('设备心跳已恢复')
             elif kind=="cancel":self.gen=gen;self.pcm=bytearray()
             elif kind=="recording":self.gen=gen;self.pcm=bytearray();self.status="接收录音"
             elif kind=="pcm" and gen==self.gen:
@@ -215,6 +242,8 @@ class Bridge:
                         if first and gen==self.gen:raise RuntimeError("语音服务没有返回音频")
                     else:self.playback(windows_tts(answer,self.windows_voice),gen)
                 if gen==self.gen:self.send("done",generation=gen);self.status="USB Codex 已就绪"
+            except (serial.SerialException,OSError):
+                self.disconnected()
             except ThreadOwnedError as exc:
                 message=str(exc);self.status=message;self.reply=message;self.last_reply=message
                 self.logs.append(message)
@@ -224,16 +253,17 @@ class Bridge:
                         if not self.muted:self.playback(windows_tts(message,self.windows_voice),gen)
                         if gen==self.gen:self.send('done',generation=gen)
                     except Exception:
-                        if gen==self.gen:self.send('error',generation=gen,text=message)
+                        if gen==self.gen:self.send_error(gen,message)
             except Exception as exc:
                 self.status=str(exc);self.logs.append(str(exc))
-                if gen==self.gen:self.send("error",generation=gen,text="对话或朗读失败，请查看电脑桥接页面")
+                if gen==self.gen:self.send_error(gen,"对话或朗读失败，请查看电脑桥接页面")
 
     def ask_text(self,text):
         # Exercise the same on-device press/release generation as touch input.
         if self.pending_text is not None:return
         self.pending_text=text
-        self.send("key",pressed=True,text_mode=True);time.sleep(.25);self.send("key",pressed=False)
+        try:self.send("key",pressed=True,text_mode=True);time.sleep(.25);self.send("key",pressed=False)
+        except (serial.SerialException,OSError):self.disconnected()
 
 
 PAGE=Path(__file__).with_name('page.html').read_text(encoding='utf-8')

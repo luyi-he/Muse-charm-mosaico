@@ -37,7 +37,7 @@ change is awaiting owner verification. Keys are not included in firmware
 or the repository.
 
 Long-run USB reconnect, prolonged battery discharge and extended conversations
-have not been validated. Restart the bridge after USB disconnect.
+have not been validated. The bridge now retries the configured USB port after disconnect.
 Motion wake is not implemented. Talk input uses the bottom touchscreen button;
 there is no mapped physical top AI button.
 
@@ -101,3 +101,12 @@ Whisper and default Windows TTS run locally.
   while retaining the selected chat ID.
 - The desktop and bridge still cannot hold the same writer concurrently.
   Opening the desktop chat during an active voice turn may still conflict.
+
+## USB recovery
+
+- A real transient COM4 disconnect stopped the old reader/heartbeat while the
+  HTTP page stayed alive. Restart restored live battery and microphone events.
+- Reader now reopens the configured port until available; heartbeat keeps
+  running. A disconnect clears partial audio/text and cancels the old generation.
+- Regression test simulates a split JSON record, USB failure, one failed reopen
+  and a successful heartbeat. Old recording/request is not replayed.
