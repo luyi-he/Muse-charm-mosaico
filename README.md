@@ -11,7 +11,8 @@
 CoreS3 使用独立工程 [`projects/muse_companion_cores3`](projects/muse_companion_cores3/README.md)，
 采用板载屏幕、触摸、麦克风和喇叭驱动，界面为 320×240。通过 USB 桥接本机 Codex CLI，
 无需 Muse 配对。按住屏幕底部绿色说话按钮录音，松开发送；支持真实电量和触屏设置。
-电脑桥接程序、Qwen 可选朗读配置及构建烧录步骤见该工程说明。
+屏幕保持常亮，可查看、继续和创建本机 Codex 聊天；支持 Gemini、OpenAI、Qwen 和电脑朗读。
+电脑桥接程序、语音配置及构建烧录步骤见该工程说明。
 
 ## 实机演示
 

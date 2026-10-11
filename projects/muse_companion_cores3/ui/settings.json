@@ -221,7 +221,7 @@
       "name": "sleep_text",
       "bind": "sleep_text",
       "bind_target": "text",
-      "font_charset": "\n !\"#%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_abcdefghijklmnopqrstuvwxyz{|}~·…、一上中么亮什仍以伙会传伴住作保停儿先到动发取可后听和唤回在失始字存密对尚就屏已幕度开录待忙想我或手打拿按接提摸播操收放文断新无时有朗未本机松查检次止正没法消点热熄留直眯码秒稍等答繁线络继绪续网置翻聊自触言让设试话语说请读败起超跟轻输返连送速部配醒重量键问阅需静音页顶首，？电脑桥程启动序十太短超二序百USB连接说明"
+      "font_charset": "\n !\"#%&'()*+,-./0123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_abcdefghijklmnopqrstuvwxyz{|}~·…、一上中么亮什仍以伙会传伴住作保停儿先到动发取可后听和唤回在失始字存密对尚就屏已幕度开录待忙想我或手打拿按接提摸播操收放文断新无时有朗未本机松查检次止正没法消点热熄留直眯码秒稍等答繁线络继绪续网置翻聊自触言让设试话语说请读败起超跟轻输返连送速部配醒重量键问阅需静音页顶首，？电脑桥程启动序十太短超二序百USB连接说明常"
     },
     {
       "type": "slider",
@@ -252,7 +252,8 @@
           "action": "call",
           "target_name": "sleep_change"
         }
-      ]
+      ],
+      "hidden": true
     },
     {
       "type": "label",

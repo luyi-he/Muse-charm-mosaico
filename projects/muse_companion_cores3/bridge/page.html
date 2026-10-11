@@ -1,0 +1,29 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>CoreS3 · Codex</title>
+<style>body{max-width:850px;margin:28px auto;font:16px system-ui;padding:20px;background:#faf7f2;color:#262b29}input,select,textarea{box-sizing:border-box;padding:10px;border:1px solid #ccc;border-radius:7px}input,textarea{width:100%}button{padding:10px;margin:6px 6px 6px 0;border:0;border-radius:7px;background:#d0ebdd;cursor:pointer}pre{white-space:pre-wrap;background:white;padding:16px;border-radius:10px}section{margin:24px 0;padding:18px;background:#fff;border-radius:12px}#chats{max-height:280px;overflow:auto}#chats button{display:block;text-align:left;width:100%;background:#f4f3ef}.row{display:flex;gap:12px;flex-wrap:wrap}h2{font-size:20px}.hint{color:#666;font-size:14px}</style>
+<h1>CoreS3 · Codex</h1><p>按住设备底部绿色按钮说话，松开发送。屏幕保持常亮。</p>
+<p id="status"></p><p id="battery"></p><p id="target"></p>
+<section><h2>Codex 聊天</h2><p class="hint">语音助手支持「列出任务」「查看某个任务」「创建一个聊天」。选择已有聊天后，后续话语会直接加入该聊天。</p>
+<button onclick="chats()">刷新聊天列表</button><button onclick="selectChat(null)">返回语音助手</button><div id="chats"></div>
+<details><summary>创建聊天</summary><p><input id="title" placeholder="聊天名称"></p><p><input id="cwd" placeholder="项目目录（可选，留空为语音目录）"></p><p><textarea id="prompt" placeholder="第一条问题（可选）"></textarea></p><button onclick="createChat()">创建并选中</button></details>
+<details><summary>所选聊天近期记录</summary><button onclick="history()">读取记录</button><pre id="history"></pre></details></section>
+<section><h2>语音设置</h2><p class="hint">云端识别和朗读使用各自服务的 API Key，受余额与配额限制；Codex 对话继续使用 CLI 登录。这里的声音由 AI 生成。密钥仅保存在本次程序内存中。</p>
+<p><input type="password" autocomplete="off" id="gemini" placeholder="Gemini API Key（留空保留已填写密钥）"></p>
+<label>Gemini 声音 <select id="gemini_voice"><option>Aoede</option><option>Kore</option><option>Puck</option><option>Leda</option><option>Zephyr</option></select></label><button onclick="gemini()">使用 Gemini 识别与声音</button>
+<p><input type="password" autocomplete="off" id="openai" placeholder="OpenAI API Key（留空保留已填写密钥）"></p>
+<div class="row"><label>声音 <select id="voice"><option value="marin">Marin</option><option value="coral">Coral</option><option value="cedar">Cedar</option><option value="alloy">Alloy</option><option value="shimmer">Shimmer</option></select></label></div>
+<button onclick="openai()">使用 OpenAI 识别与声音</button>
+<details><summary>其他语音服务</summary><p><input type="password" autocomplete="off" id="key" placeholder="百炼 API Key"></p><button onclick="qwen()">使用千问声音、本地识别</button><button onclick="localVoice()">使用电脑朗读、本地识别</button></details></section>
+<section><h2>文字输入</h2><input id="text" placeholder="输入问题或会话管理指令"><button onclick="ask()">发送</button><h3>听到的问题</h3><pre id="heard"></pre><h3>回答</h3><pre id="reply"></pre></section>
+<details><summary>诊断日志和耗时</summary><pre id="logs"></pre></details>
+<script>const nonce='NONCE';let selected=null;
+async function post(path,data){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Bridge-Nonce':nonce},body:JSON.stringify(data)});const result=await r.json();if(!r.ok){alert(result.error||'操作失败');throw Error('request failed')}return result}
+async function selectChat(id){await post('/select',{id});await refresh()}
+async function chats(){const rows=await(await fetch('/chats')).json();const box=document.querySelector('#chats');box.replaceChildren();for(const row of rows){const b=document.createElement('button');b.textContent=row.title;b.onclick=()=>selectChat(row.id);box.append(b)}}
+async function history(){if(!selected){document.querySelector('#history').textContent='请先选择聊天';return}const h=await(await fetch('/history?id='+encodeURIComponent(selected))).json();document.querySelector('#history').textContent=(h.messages||[]).map(m=>(m.role==='user'?'你：':'Codex：')+m.text).join('\n\n')}
+async function createChat(){await post('/create',{title:document.querySelector('#title').value,cwd:document.querySelector('#cwd').value,prompt:document.querySelector('#prompt').value});await chats();await refresh()}
+function ask(){post('/ask',{text:document.querySelector('#text').value})}
+async function openai(){await post('/audio',{openai_key:document.querySelector('#openai').value,tts:'openai',stt:'openai',voice:document.querySelector('#voice').value});document.querySelector('#openai').value='';refresh()}
+async function gemini(){await post('/audio',{gemini_key:document.querySelector('#gemini').value,tts:'gemini',stt:'gemini',gemini_voice:document.querySelector('#gemini_voice').value});document.querySelector('#gemini').value='';refresh()}
+async function qwen(){await post('/audio',{qwen_key:document.querySelector('#key').value,tts:'qwen',stt:'local'});document.querySelector('#key').value='';refresh()}
+function localVoice(){post('/audio',{tts:'windows',stt:'local'})}
+async function refresh(){try{const s=await(await fetch('/status')).json();for(const [id,k] of [['status','status'],['heard','heard'],['reply','reply'],['logs','logs']])document.getElementById(id).textContent=s[k];selected=s.selected;document.getElementById('target').textContent='当前聊天：'+(s.chat_title||'CoreS3 语音助手');document.getElementById('battery').textContent='电量：'+(s.battery<0?'暂无读数':s.battery+'%')+' · 识别：'+s.stt+' · 声音：'+s.tts}catch(e){document.querySelector('#status').textContent='桥接程序未连接'}}setInterval(refresh,1500);refresh();chats();</script></html>

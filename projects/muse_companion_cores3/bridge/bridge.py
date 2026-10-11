@@ -20,88 +20,14 @@ import threading
 import time
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
 import numpy as np
 import serial
 
 
-def codex_binary():
-    # Prefer the installed native CLI; do not spawn a shell with voice text.
-    found=shutil.which("codex.exe")
-    if found:return found
-    root=Path(os.environ.get("APPDATA", ""))/"npm/node_modules/@openai/codex/node_modules"
-    found=list(root.glob("@openai/codex-win32-*/vendor/*/bin/codex.exe"))
-    if found:return str(found[0])
-    raise RuntimeError("Install Codex CLI and run codex login first")
-
-
-class Codex:
-    def __init__(self,cwd):
-        self.proc=subprocess.Popen([codex_binary(),"app-server","--listen","stdio://"],
-            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
-            text=True,encoding="utf-8",bufsize=1,
-            creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
-        self.pending={};self.events=queue.Queue();self.counter=0;self.lock=threading.Lock()
-        self.thread=None;self.turn=None
-        threading.Thread(target=self.read,daemon=True).start()
-        self.rpc("initialize",{"clientInfo":{"name":"cores3_usb","title":"CoreS3 USB companion","version":"2.0"}})
-        self.send({"method":"initialized","params":{}})
-        result=self.rpc("thread/start",{"cwd":str(cwd),"approvalPolicy":"never","sandbox":"read-only",
-            "baseInstructions":"你是 CoreS3 上的语音伙伴，回答简短、自然的中文，通常不超过120字。用户输入由本地语音识别产生，可能有错字。不要调用工具、读文件或执行命令；只进行对话。"})
-        self.thread=result["thread"]["id"]
-
-    def send(self,obj):
-        with self.lock:
-            self.proc.stdin.write(json.dumps(obj,ensure_ascii=False)+"\n");self.proc.stdin.flush()
-
-    def read(self):
-        for line in self.proc.stdout:
-            try:msg=json.loads(line)
-            except ValueError:continue
-            if "id" in msg and "method" not in msg:
-                q=self.pending.get(msg["id"])
-                if q:q.put(msg)
-            elif "id" in msg:
-                # Voice chat grants no new file/command/MCP permissions.
-                self.send({"id":msg["id"],"error":{"code":-32601,"message":"Tools and approvals unavailable in voice chat"}})
-            else:self.events.put(msg)
-        for q in list(self.pending.values()):q.put({"error":{"message":"Codex process stopped"}})
-
-    def rpc(self,method,params,timeout=60):
-        self.counter+=1;ident=self.counter;q=queue.Queue();self.pending[ident]=q
-        try:
-            self.send({"id":ident,"method":method,"params":params});msg=q.get(timeout=timeout)
-            if "error" in msg:raise RuntimeError(msg["error"].get("message","Codex request failed"))
-            return msg["result"]
-        finally:self.pending.pop(ident,None)
-
-    def ask(self,text,current):
-        while not self.events.empty():self.events.get_nowait()
-        result=self.rpc("turn/start",{"threadId":self.thread,"input":[{"type":"text","text":text}]})
-        self.turn=result["turn"]["id"];parts=[];final=[];deadline=time.monotonic()+180
-        try:
-            while time.monotonic()<deadline:
-                if not current():
-                    self.rpc("turn/interrupt",{"threadId":self.thread,"turnId":self.turn});return ""
-                try:msg=self.events.get(timeout=.25)
-                except queue.Empty:continue
-                params=msg.get("params",{});method=msg.get("method","")
-                if params.get("threadId") not in (None,self.thread):continue
-                if method=="item/agentMessage/delta":parts.append(params.get("delta",""))
-                elif method=="item/completed":
-                    item=params.get("item",{})
-                    if item.get("type")=="agentMessage":final.append(item.get("text",""))
-                elif method=="turn/completed":
-                    turn=params.get("turn",{})
-                    if turn.get("status")=="failed":raise RuntimeError("Codex turn failed")
-                    answer="\n".join(final) or "".join(parts)
-                    if not answer:raise RuntimeError("Codex returned no text")
-                    return answer
-            self.rpc("turn/interrupt",{"threadId":self.thread,"turnId":self.turn})
-            raise TimeoutError("Codex response timeout")
-        finally:self.turn=None
-
-    def close(self):
-        self.proc.terminate()
+from codex_client import Codex
+from audio_api import transcribe as openai_stt, speak as openai_tts
+from gemini_audio import transcribe as gemini_stt, speak as gemini_tts
 
 
 def windows_tts(text):
@@ -146,6 +72,12 @@ class Bridge:
     def __init__(self,port,model,cwd):
         self.status="正在启动";self.logs=collections.deque(maxlen=40);self.last_text="";self.reply=""
         self.key=os.environ.get("DASHSCOPE_API_KEY","");self.web_nonce=secrets.token_urlsafe(24)
+        self.openai_key=os.environ.get('OPENAI_API_KEY','');self.voice='marin'
+        self.tts_mode='openai' if self.openai_key else 'qwen' if self.key else 'windows'
+        self.stt_mode='openai' if self.openai_key else 'local'
+        self.gemini_key=os.environ.get('GEMINI_API_KEY','');self.gemini_voice='Aoede'
+        if self.gemini_key:self.tts_mode='gemini';self.stt_mode='gemini'
+        self.chat_title='CoreS3 语音助手'
         self.gen=0;self.muted=False;self.pcm=bytearray();self.jobs=queue.Queue(maxsize=2);self.pending_text=None
         self.acks=queue.Queue();self.tx=threading.Lock();self.alive=True;self.ready=False;self.last_reply=""
         self.serial=serial.Serial(baudrate=115200,timeout=.25,write_timeout=5)
@@ -227,10 +159,17 @@ class Bridge:
                 if retry:answer=data
                 else:
                     if isinstance(data,bytes):
-                        self.status="本地识别中"
-                        audio=np.frombuffer(data,dtype="<i2").astype(np.float32)/32768
-                        segments,_=self.whisper.transcribe(audio,language="zh",beam_size=3,vad_filter=True)
-                        text="".join(s.text for s in segments).strip()
+                        self.status="语音识别中"
+                        if self.stt_mode=='gemini':
+                            if not self.gemini_key:raise ValueError('请先填写 Gemini API Key')
+                            text=gemini_stt(data,self.gemini_key)
+                        elif self.stt_mode=='openai':
+                            if not self.openai_key:raise ValueError('请先填写 OpenAI API Key')
+                            text=openai_stt(data,self.openai_key)
+                        else:
+                            audio=np.frombuffer(data,dtype="<i2").astype(np.float32)/32768
+                            segments,_=self.whisper.transcribe(audio,language="zh",beam_size=3,vad_filter=True)
+                            text="".join(s.text for s in segments).strip()
                     else:text=data
                     if not text:raise ValueError("没有识别到说话，请再试一次")
                     self.last_text=text;self.status="Codex 正在回答"
@@ -244,17 +183,25 @@ class Bridge:
                 if not self.muted:
                     self.status="朗读中"
                     started=time.monotonic()
-                    if self.key:
+                    if self.tts_mode in ('qwen','openai','gemini'):
                         sequence=0;first=True;tail=b""
                         def stream(chunk):
                             nonlocal sequence,first,tail
                             if first:
-                                self.logs.append(f"Qwen 首段音频 {time.monotonic()-started:.1f}s")
+                                self.logs.append(f"{self.tts_mode} 首段音频 {time.monotonic()-started:.1f}s")
                                 first=False
                             chunk=tail+chunk;even=len(chunk)&~1;tail=chunk[even:]
                             sequence=self.playback(chunk[:even],gen,sequence)
-                        asyncio.run(qwen_tts(answer,self.key,stream,lambda:gen==self.gen))
-                        if first:raise RuntimeError("Qwen returned no audio")
+                        if self.tts_mode=='gemini':
+                            if not self.gemini_key:raise ValueError('请先填写 Gemini API Key')
+                            gemini_tts(answer,self.gemini_key,self.gemini_voice,stream,lambda:gen==self.gen)
+                        elif self.tts_mode=='openai':
+                            if not self.openai_key:raise ValueError('请先填写 OpenAI API Key')
+                            openai_tts(answer,self.openai_key,self.voice,stream,lambda:gen==self.gen)
+                        else:
+                            if not self.key:raise ValueError('请先填写百炼 API Key')
+                            asyncio.run(qwen_tts(answer,self.key,stream,lambda:gen==self.gen))
+                        if first and gen==self.gen:raise RuntimeError("语音服务没有返回音频")
                     else:self.playback(windows_tts(answer),gen)
                 if gen==self.gen:self.send("done",generation=gen);self.status="USB Codex 已就绪"
             except Exception as exc:
@@ -268,17 +215,7 @@ class Bridge:
         self.send("key",pressed=True,text_mode=True);time.sleep(.25);self.send("key",pressed=False)
 
 
-PAGE='''<!doctype html><meta charset="utf-8"><title>CoreS3 · Codex</title>
-<style>body{max-width:720px;margin:40px auto;font:16px system-ui;padding:20px;background:#faf7f2}input{width:85%;padding:10px}button{padding:10px;margin:8px}pre{white-space:pre-wrap;background:white;padding:16px}</style>
-<h1>CoreS3 · 本机 Codex</h1><p>用 USB 连接设备，按住屏幕底部「按住说话」，松开发送。</p>
-<p id="status"></p><p id="battery"></p><h3>文字测试</h3><input id="text" placeholder="也可以在这里输入问题"><button onclick="ask()">发送</button>
-<h3>听到的问题</h3><pre id="heard"></pre><h3>Codex 回答</h3><pre id="reply"></pre>
-<h3>朗读设置</h3><p>默认使用电脑的中文朗读。填写百炼密钥后改用 Qwen Cherry；密钥仅保存在本次程序内存中。</p>
-<input type="password" id="key" placeholder="可选：百炼 API Key"><button onclick="tts()">使用 Qwen</button><button onclick="local()">使用电脑朗读</button>
-<details><summary>设备诊断日志</summary><pre id="logs"></pre></details>
-<script>const nonce='NONCE';async function post(path,data){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Bridge-Nonce':nonce},body:JSON.stringify(data)});if(!r.ok)alert('操作失败，请重试');}
-function ask(){post('/ask',{text:document.querySelector('#text').value})}function tts(){post('/tts',{key:document.querySelector('#key').value});document.querySelector('#key').value=''}function local(){post('/tts',{key:''})}
-async function refresh(){const s=await(await fetch('/status')).json();for(const [id,k] of [['status','status'],['heard','heard'],['reply','reply'],['logs','logs']])document.getElementById(id).textContent=s[k];document.getElementById('battery').textContent='设备电量：'+(s.battery<0?'暂无有效读数':s.battery+'%')+' · 朗读：'+s.tts}setInterval(refresh,1000);refresh();</script>'''
+PAGE=Path(__file__).with_name('page.html').read_text(encoding='utf-8')
 
 
 def serve(bridge,port):
@@ -291,8 +228,15 @@ def serve(bridge,port):
             if self.headers.get("Host") not in (f"127.0.0.1:{port}",f"localhost:{port}"):return self.respond(403,b"{}")
             if self.path=="/":return self.respond(200,PAGE.replace("NONCE",bridge.web_nonce).encode(),"text/html")
             if self.path=="/status":return self.respond(200,json.dumps({"status":bridge.status,"heard":bridge.last_text,
-                "reply":bridge.reply,"battery":getattr(bridge,"battery",-1),"tts":"Qwen" if bridge.key else "电脑中文朗读",
+                "reply":bridge.reply,"battery":getattr(bridge,"battery",-1),"tts":bridge.tts_mode,
+                "stt":bridge.stt_mode,"selected":bridge.codex.selected,"chat_title":bridge.codex.selected_title,
                 "logs":"\n".join(bridge.logs)},ensure_ascii=False).encode())
+            try:
+                if self.path=='/chats':return self.respond(200,json.dumps(bridge.codex.list_chats(),ensure_ascii=False).encode())
+                if self.path.startswith('/history?'):
+                    ident=parse_qs(urlparse(self.path).query)['id'][0]
+                    return self.respond(200,json.dumps(bridge.codex.history(ident),ensure_ascii=False).encode())
+            except Exception:return self.respond(400,b'{"error":"Cannot read chat"}')
             self.respond(404,b"{}")
         def do_POST(self):
             if self.headers.get("Host") not in (f"127.0.0.1:{port}",f"localhost:{port}"):return self.respond(403,b"{}")
@@ -301,14 +245,41 @@ def serve(bridge,port):
                 length=int(self.headers.get("Content-Length",0))
                 if not 0<length<=8192:raise ValueError()
                 data=json.loads(self.rfile.read(length))
-                if self.path=="/tts":bridge.key=data.get("key","").strip()
+                if self.path=="/tts":
+                    bridge.key=data.get("key","").strip();bridge.tts_mode='qwen' if bridge.key else 'windows'
+                elif self.path=='/audio':
+                    tts=data.get('tts',bridge.tts_mode);stt=data.get('stt',bridge.stt_mode);voice=data.get('voice',bridge.voice)
+                    if tts not in ('openai','qwen','windows','gemini') or stt not in ('openai','local','gemini') or voice not in ('coral','marin','cedar','alloy','shimmer'):raise ValueError()
+                    gemini_voice=data.get('gemini_voice',bridge.gemini_voice)
+                    if gemini_voice not in ('Aoede','Kore','Puck','Leda','Zephyr'):raise ValueError()
+                    if data.get('openai_key'):bridge.openai_key=data['openai_key'].strip()
+                    if data.get('qwen_key'):bridge.key=data['qwen_key'].strip()
+                    if data.get('gemini_key'):bridge.gemini_key=data['gemini_key'].strip()
+                    if (tts=='gemini' or stt=='gemini') and not bridge.gemini_key:raise ValueError('请先填写 Gemini API Key')
+                    if (tts=='openai' or stt=='openai') and not bridge.openai_key:raise ValueError('请先填写 OpenAI API Key')
+                    if tts=='qwen' and not bridge.key:raise ValueError('请先填写百炼 API Key')
+                    bridge.tts_mode=tts;bridge.stt_mode=stt;bridge.voice=voice;bridge.gemini_voice=gemini_voice
+                elif self.path in ('/select','/create'):
+                    if not bridge.codex.operation.acquire(blocking=False):return self.respond(409,b'{"error":"Codex is responding; try again shortly"}')
+                    try:
+                        if self.path=='/select':
+                            ident=data.get('id');bridge.codex.select(ident)
+                            bridge.chat_title=bridge.codex.history(ident)['title'] if ident else 'CoreS3 语音助手'
+                        else:
+                            title=data.get('title','').strip()
+                            if not title:raise ValueError('请填写聊天名称')
+                            created=bridge.codex.create(title,data.get('cwd') or None);bridge.chat_title=created['title']
+                    finally:bridge.codex.operation.release()
+                    if self.path=='/create' and data.get('prompt'):
+                        threading.Thread(target=bridge.ask_text,args=(data['prompt'],),daemon=True).start()
                 elif self.path=="/ask":
                     text=data.get("text","").strip()
                     if not text or len(text)>2000:raise ValueError()
                     threading.Thread(target=bridge.ask_text,args=(text,),daemon=True).start()
                 else:return self.respond(404,b"{}")
                 self.respond(200,b"{}")
-            except (ValueError,TypeError):self.respond(400,b"{}")
+            except (ValueError,TypeError,RuntimeError) as exc:
+                self.respond(400,json.dumps({'error':str(exc)},ensure_ascii=False).encode())
     ThreadingHTTPServer(("127.0.0.1",port),Handler).serve_forever()
 
 

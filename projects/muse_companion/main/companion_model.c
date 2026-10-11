@@ -15,7 +15,11 @@ companion_model_handle_t companion_model_create(void)
 {
     companion_model_handle_t m=calloc(1,sizeof(*m));
     if(m) { m->s.volume=55; m->s.brightness=70; m->s.display_brightness=70;
-        m->s.battery=-1; m->s.sleep_seconds=15; m->s.speech_rate=100; m->s.page_seconds=7; }
+        m->s.battery=-1; m->s.sleep_seconds=15; m->s.speech_rate=100; m->s.page_seconds=7;
+#ifdef COMPANION_LOCAL_CODEX
+        m->s.sleep_seconds=0;
+#endif
+    }
     return m;
 }
 void companion_model_delete(companion_model_handle_t m) { free(m); }
@@ -69,7 +73,11 @@ unsigned companion_model_action(companion_model_handle_t m,
         m->s.display_brightness=m->s.brightness; return COMP_EFFECT_PREFS;
     case COMP_LANGUAGE: m->s.language=value?1:0; return COMP_EFFECT_PREFS;
     case COMP_SLEEP_TIMEOUT:
+#ifdef COMPANION_LOCAL_CODEX
+        m->s.sleep_seconds=0;return COMP_EFFECT_PREFS;
+#else
         m->s.sleep_seconds=value==5||value==10||value==15||value==20||value==30||value==60?value:15; return COMP_EFFECT_PREFS;
+#endif
     case COMP_SPEECH_RATE:
         m->s.speech_rate=value>=75&&value<=150?value:100; return COMP_EFFECT_PREFS;
     case COMP_PAGE_INTERVAL:
@@ -90,6 +98,7 @@ void companion_model_tick(companion_model_handle_t m,uint32_t ms)
     if(!m) return;
     bool busy=m->s.mode==COMP_LISTENING||m->s.mode==COMP_THINKING||m->s.mode==COMP_SPEAKING;
     if(busy) { m->idle_ms=0; m->phase_ms+=ms; return; }
+    if(m->s.sleep_seconds==0){wake(m);return;}
     uint32_t off_ms=m->s.sleep_seconds*1000, dim_ms=off_ms-DIM_TRANSITION_MS;
     if(m->idle_ms<off_ms) m->idle_ms+=ms;
     unsigned level=m->s.brightness;

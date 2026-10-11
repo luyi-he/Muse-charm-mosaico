@@ -10,8 +10,8 @@ Codex 使用电脑已有的 CLI 登录；推理仍通过该账号连接云端服
 - 右上角喇叭图标切换静音；齿轮打开设置。设置里的音量和亮度支持拖动。
 - CoreS3 的电源/复位键不是 AI 键；GPIO0 是音频 MCLK，不作为录音输入。
 - 电量来自 AXP2101 的电池存在位和 SOC 寄存器；无有效读数时显示 `--`。
-- 保留自动熄屏、触摸唤醒和回复字幕翻页；暂未接入运动唤醒。
-- USB 未连接表示电脑桥接程序未启动、尚未就绪或心跳中断。
+- 屏幕保持常亮；保留回复字幕翻页，设置页不再提供熄屏时间。
+- 「Codex 未连接」表示电脑桥接程序未启动、尚未就绪或心跳中断。
 
 ## 电脑桥接程序
 
@@ -27,19 +27,31 @@ Codex 使用电脑已有的 CLI 登录；推理仍通过该账号连接云端服
 ./projects/muse_companion_cores3/bridge/Start-Bridge.ps1 -Port COM4
 ```
 
-打开 `http://127.0.0.1:8765` 查看状态、识别文字、回答和设备诊断日志，
-也可以输入文字测试对话。默认使用本地 Whisper base（CPU/int8）识别中文，
-默认用 Windows 中文语音朗读，音频通过 USB 在 CoreS3 喇叭播放。
-页面可选填百炼 API Key，切换为 Qwen3-TTS-Flash-Realtime / Cherry。
-千问音频收到后即通过 USB 播放，不等待整段合成完毕。
-诊断日志记录本地识别、Codex 回答和千问首段音频的耗时。
-密钥仅保存在桥接程序内存，关闭程序后需重新填写；也可使用进程环境变量
-`DASHSCOPE_API_KEY`。不向 Codex 发送 TTS 密钥，不将其写入仓库或固件。
+打开 `http://127.0.0.1:8765` 查看状态、识别文字、回答和耗时，
+也可以输入文字测试。页面支持列出、选择、读取、创建本机 Codex 聊天。
+选择已有聊天后，后续输入继续该聊天；「返回语音助手」恢复管理模式。
+也可以说「列出最近三个任务」「创建一个聊天，叫桌面助手」。
+新聊天由 App Server 创建，会出现在 Codex 的聊天列表里。
+程序保存选中的聊天 ID，重启后可继续；列表显示最近 50 个聊天。
 
-桥接程序通过官方 Codex **App Server**（`codex app-server --listen stdio://`）
-调用本机 CLI，使用独立、连续的语音对话，并继承 CLI 的默认模型。
-没有使用 MCP 来反向控制这个编程聊天。语音模式使用只读沙箱，并拒绝工具审批请求。
-程序的状态页仅监听电脑回环地址，不向局域网开放。
+语音设置支持：
+
+- Gemini：`gemini-3.5-flash-lite` 识别，`gemini-3.8-flash-lite-tts` 流式朗读，默认 Aoede，页面可换声音。
+- OpenAI：`gpt-4o-mini-transcribe` 识别，`gpt-4o-mini-tts` 流式朗读，默认 Marin。
+- Qwen：本地 Whisper 识别，Qwen3-TTS-Flash-Realtime / Cherry 流式朗读。
+- 默认：本地 Whisper base（CPU/int8）和 Windows 中文朗读。
+
+云端音频服务使用各自的 API 密钥，受余额和配额限制，不能共用 Codex 订阅。
+音频收到后即通过 USB 播放；OpenAI PCM 从 24 kHz 重采样到设备的 16 kHz，
+Gemini 直接请求 16 kHz PCM。诊断日志记录识别、Codex 回答及首段音频耗时。
+密钥仅保存在程序内存，关闭程序后需重新填写；也可使用进程环境变量
+`DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`。
+密钥不发送给 Codex，不写入仓库或固件。云端语音处理录音与需要朗读的回答。
+
+桥接程序使用官方 Codex **App Server**（`codex app-server --listen stdio://`），
+继承已登录 CLI 的账号和默认模型。会话管理通过 App Server 完成。
+语音回合使用只读沙箱并拒绝审批请求，不支持执行需要批准的电脑操作。
+状态页仅监听电脑回环地址，不向局域网开放。
 
 ## 硬件与开发手册
 

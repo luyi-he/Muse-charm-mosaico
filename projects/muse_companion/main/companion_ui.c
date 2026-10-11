@@ -171,6 +171,9 @@ static void render(companion_ui_handle_t s)
         checked(s,gsp_companion_settings_rate_set_value(s->ui,m->speech_rate));
         checked(s,gsp_companion_settings_page_set_value(s->ui,m->page_seconds));
         snprintf(text,sizeof(text),en?"Screen off %us":"自动熄屏 %u秒",m->sleep_seconds);
+#ifdef COMPANION_LOCAL_CODEX
+        snprintf(text,sizeof(text),"%s",en?"Screen always on":"屏幕保持常亮");
+#endif
         checked(s,gsp_companion_settings_sleep_text_set_text(s->ui,text));
         snprintf(text,sizeof(text),en?"Rate %u.%02ux":"语速 %u.%02ux",m->speech_rate/100,m->speech_rate%100);
         checked(s,gsp_companion_settings_rate_text_set_text(s->ui,text));
@@ -199,7 +202,7 @@ static void render(companion_ui_handle_t s)
     }
     snprintf(text,sizeof(text),"%s",m->paired?(m->online?(en?"Muse online":"Muse 在线"):(en?"Connecting":"正在连接")):(en?"Pair device":"等待配对"));
 #ifdef COMPANION_LOCAL_CODEX
-    snprintf(text,sizeof(text),"Codex %s",m->online?(en?"USB online":"USB 已连接"):(en?"USB offline":"USB 未连接"));
+    snprintf(text,sizeof(text),"Codex %s",m->online?(en?"connected":"已连接"):(en?"offline":"未连接"));
 #endif
     checked(s,gsp_companion_connection_set_text(s->ui,text));
     if(m->battery>=0) snprintf(text,sizeof(text),"%d%%",m->battery);

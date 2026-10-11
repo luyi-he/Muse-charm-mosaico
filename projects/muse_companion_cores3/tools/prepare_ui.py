@@ -44,6 +44,8 @@ for scene in ("main", "settings"):
         if name.startswith("heart_"):
             obj["y"] = {"property": "y", "default": 40, "min": 24, "max": 50}
         if scene == "settings":
+            if name == "sleep": obj.update(hidden=True)
+            if name == "sleep_text": obj["font_charset"] += "常"
             rows = ("volume", "brightness", "language", "sleep", "rate", "page")
             for index, row in enumerate(rows):
                 if name == row or name.startswith(row + "_"):
