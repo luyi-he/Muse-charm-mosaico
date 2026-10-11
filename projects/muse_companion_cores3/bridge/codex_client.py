@@ -32,6 +32,11 @@ TOOLS=[
 ]
 
 
+class ThreadOwnedError(RuntimeError):
+    def __init__(self):
+        super().__init__('这个聊天由 Codex 桌面程序占用，语音指令尚未发送。请在电脑聊天中继续操作；完成后可以说“读取当前会话最新回复”。')
+
+
 class Codex:
     def __init__(self,cwd):
         self.cwd=Path(cwd);self.cwd.mkdir(parents=True,exist_ok=True);self.state_path=self.cwd/'bridge-session.json'
@@ -141,12 +146,20 @@ class Codex:
     def ask(self,text,current):
         with self.operation:
             command=text.strip().strip('。？！!?，,')
+            if command in ('读取当前会话最新回复','读取这个会话最新回复','读一下最新回复','读最新回复'):
+                if not self.selected:return '请先选择要读取的聊天。'
+                messages=self.history(self.selected)['messages']
+                return next((m['text'] for m in reversed(messages) if m['role']=='assistant'),'这个聊天还没有回复。')
             if command in ('返回语音助手','返回助手','返回任务列表','回到语音助手'):
                 self.select(None);return '已返回语音助手，你可以查看任务或创建聊天。'
             if any(x in command for x in ('列出任务','列出聊天','有哪些任务','有哪些聊天','创建聊天','新建聊天','创建一个聊天','新建一个聊天')):
                 self.select(None)
             target=self.selected or self.thread
-            if self.selected:self.rpc('thread/resume',{'threadId':target,'excludeTurns':True})
+            if self.selected:
+                try:self.rpc('thread/resume',{'threadId':target,'excludeTurns':True})
+                except RuntimeError as exc:
+                    if 'already has an active writer' in str(exc):raise ThreadOwnedError() from exc
+                    raise
             return self._ask(target,text,current)
 
     def _ask(self,target,text,current):

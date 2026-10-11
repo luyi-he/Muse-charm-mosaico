@@ -2,7 +2,7 @@
 <style>body{max-width:850px;margin:28px auto;font:16px system-ui;padding:20px;background:#faf7f2;color:#262b29}input,select,textarea{box-sizing:border-box;padding:10px;border:1px solid #ccc;border-radius:7px}input,textarea{width:100%}button{padding:10px;margin:6px 6px 6px 0;border:0;border-radius:7px;background:#d0ebdd;cursor:pointer}pre{white-space:pre-wrap;background:white;padding:16px;border-radius:10px}section{margin:24px 0;padding:18px;background:#fff;border-radius:12px}#chats{max-height:280px;overflow:auto}#chats button{display:block;text-align:left;width:100%;background:#f4f3ef}.row{display:flex;gap:12px;flex-wrap:wrap}h2{font-size:20px}.hint{color:#666;font-size:14px}</style>
 <h1>CoreS3 · Codex</h1><p>按住设备底部绿色按钮说话，松开发送。屏幕保持常亮。</p>
 <p id="status"></p><p id="battery"></p><p id="target"></p>
-<section><h2>Codex 聊天</h2><p class="hint">语音助手支持「列出任务」「查看某个任务」「创建一个聊天」。选择已有聊天后，后续话语会直接加入该聊天。</p>
+<section><h2>Codex 聊天</h2><p class="hint">语音助手支持「列出任务」「查看某个任务」「创建一个聊天」。选择已有聊天后，后续话语尝试加入该聊天。桌面程序占用的聊天暂时无法发送指令，可说「读取当前会话最新回复」听取结果。</p>
 <button onclick="chats()">刷新聊天列表</button><button onclick="selectChat(null)">返回语音助手</button><div id="chats"></div>
 <details><summary>创建聊天</summary><p><input id="title" placeholder="聊天名称"></p><p><input id="cwd" placeholder="项目目录（可选，留空为语音目录）"></p><p><textarea id="prompt" placeholder="第一条问题（可选）"></textarea></p><button onclick="createChat()">创建并选中</button></details>
 <details><summary>所选聊天近期记录</summary><button onclick="history()">读取记录</button><pre id="history"></pre></details></section>

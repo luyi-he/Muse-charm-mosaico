@@ -25,7 +25,7 @@ import numpy as np
 import serial
 
 
-from codex_client import Codex
+from codex_client import Codex, ThreadOwnedError
 from audio_api import transcribe as openai_stt, speak as openai_tts
 from gemini_audio import transcribe as gemini_stt, speak as gemini_tts
 
@@ -215,6 +215,16 @@ class Bridge:
                         if first and gen==self.gen:raise RuntimeError("语音服务没有返回音频")
                     else:self.playback(windows_tts(answer,self.windows_voice),gen)
                 if gen==self.gen:self.send("done",generation=gen);self.status="USB Codex 已就绪"
+            except ThreadOwnedError as exc:
+                message=str(exc);self.status=message;self.reply=message;self.last_reply=message
+                self.logs.append(message)
+                if gen==self.gen:
+                    self.send('reply',generation=gen,text=message,speaking=not self.muted)
+                    try:
+                        if not self.muted:self.playback(windows_tts(message,self.windows_voice),gen)
+                        if gen==self.gen:self.send('done',generation=gen)
+                    except Exception:
+                        if gen==self.gen:self.send('error',generation=gen,text=message)
             except Exception as exc:
                 self.status=str(exc);self.logs.append(str(exc))
                 if gen==self.gen:self.send("error",generation=gen,text="对话或朗读失败，请查看电脑桥接页面")

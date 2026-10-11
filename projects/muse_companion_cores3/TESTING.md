@@ -74,3 +74,15 @@ Whisper and default Windows TTS run locally.
   Huihui, Yaoyao and Kangkang. Each synthesized a Chinese sentence successfully
   in about one second; WAV decoding/resampling produced 16 kHz mono PCM.
   Page exposes all three installed voices. Current mode is local STT/Windows TTS.
+
+## Desktop writer ownership
+
+- Reproduced `already has an active writer` on a desktop-owned mail chat.
+  Selection/read succeeds; resume fails before turn/start, so no mail request
+  was executed by the bridge. App idle status does not guarantee writer release.
+- Added a distinct Chinese device/page/spoken notice without duplicating or
+  taking over the chat. Added latest-reply reading without thread/resume.
+- Regression tests verify no turn is started after ownership rejection and
+  latest-reply reading does not try to resume the desktop chat.
+- Direct submission to desktop-owned chats remains unsupported by the standalone
+  bridge. Do not claim that listing and reading imply write access.
