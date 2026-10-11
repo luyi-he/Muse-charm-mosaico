@@ -292,6 +292,7 @@ def serve(bridge,port):
                             title=data.get('title','').strip()
                             if not title:raise ValueError('请填写聊天名称')
                             created=bridge.codex.create(title,data.get('cwd') or None);bridge.chat_title=created['title']
+                            bridge.codex.release_writer()
                     finally:bridge.codex.operation.release()
                     if self.path=='/create' and data.get('prompt'):
                         threading.Thread(target=bridge.ask_text,args=(data['prompt'],),daemon=True).start()

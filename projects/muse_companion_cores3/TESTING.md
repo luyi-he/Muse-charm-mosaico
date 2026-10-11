@@ -86,3 +86,18 @@ Whisper and default Windows TTS run locally.
   latest-reply reading does not try to resume the desktop chat.
 - Direct submission to desktop-owned chats remains unsupported by the standalone
   bridge. Do not claim that listing and reading imply write access.
+
+## Persistent writer release
+
+- Found three numbered desktop forks of the original CoreS3 chat. Rollout
+  metadata points each fork at the same original ID; actual voice messages
+  remained in the original. These were not new bridge turn targets.
+- Unsubscribe retains the server/thread for a 30-minute grace period, so the
+  bridge now terminates only its own App Server after each answer and reconnects
+  lazily. IDs and history are persisted and reused; no fallback chat creation
+  occurs if the voice controller is owned by the desktop.
+- HTTP chat creation also releases its idle server. Transport lifecycle is
+  serialized against RPCs. Tests cover releasing after success and failure
+  while retaining the selected chat ID.
+- The desktop and bridge still cannot hold the same writer concurrently.
+  Opening the desktop chat during an active voice turn may still conflict.

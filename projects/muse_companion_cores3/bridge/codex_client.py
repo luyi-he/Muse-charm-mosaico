@@ -40,21 +40,18 @@ class ThreadOwnedError(RuntimeError):
 class Codex:
     def __init__(self,cwd):
         self.cwd=Path(cwd);self.cwd.mkdir(parents=True,exist_ok=True);self.state_path=self.cwd/'bridge-session.json'
-        self.proc=subprocess.Popen([codex_binary(),'app-server','--listen','stdio://'],
-            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
-            text=True,encoding='utf-8',bufsize=1,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         self.pending={};self.events=queue.Queue();self.counter=0
         self.lock=threading.Lock();self.ids=threading.Lock();self.operation=threading.Lock()
+        self.transport=threading.RLock();self.proc=None;self.reader=None
         self.thread=None;self.selected=None;self.turn=None;self.selected_title='CoreS3 语音助手'
-        threading.Thread(target=self.read,daemon=True).start()
-        self.rpc('initialize',{'clientInfo':{'name':'cores3_usb','title':'CoreS3 voice','version':'3.0'},
-            'capabilities':{'experimentalApi':True}})
-        self.send({'method':'initialized','params':{}})
+        self.connect()
         try:state=json.loads(self.state_path.read_text(encoding='utf-8'))
         except (OSError,ValueError):state={}
         if state.get('controller'):
             try:self.thread=self.rpc('thread/resume',{'threadId':state['controller'],'excludeTurns':True})['thread']['id']
-            except RuntimeError:pass
+            except RuntimeError as exc:
+                if 'already has an active writer' in str(exc):self.thread=state['controller']
+                else:raise
         if not self.thread:
             self.thread=self.rpc('thread/start',{'cwd':str(self.cwd),'sandbox':'read-only','approvalPolicy':'never',
                 'dynamicTools':TOOLS,'developerInstructions':
@@ -67,6 +64,24 @@ class Codex:
             try:self.select(state['selected'])
             except RuntimeError:pass
         self.save()
+        self.release_writer()
+
+    def connect(self):
+        self.proc=subprocess.Popen([codex_binary(),'app-server','--listen','stdio://'],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+            text=True,encoding='utf-8',bufsize=1,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        self.reader=threading.Thread(target=self.read,daemon=True);self.reader.start()
+        self.rpc('initialize',{'clientInfo':{'name':'cores3_usb','title':'CoreS3 voice','version':'3.1'},
+            'capabilities':{'experimentalApi':True}})
+        self.send({'method':'initialized','params':{}})
+
+    def release_writer(self):
+        # Unsubscribe retains a writer for 30 minutes. End our own server instead.
+        # A fresh server is connected lazily; persisted chat IDs stay unchanged.
+        with self.transport:
+            if self.proc and self.proc.poll() is None:
+                self.proc.terminate();self.proc.wait(timeout=5)
+            if self.reader:self.reader.join(timeout=5)
 
     def save(self):
         self.state_path.write_text(json.dumps({'controller':self.thread,'selected':self.selected}),encoding='utf-8')
@@ -88,13 +103,15 @@ class Codex:
         for q in list(self.pending.values()):q.put({'error':{'message':'Codex process stopped'}})
 
     def rpc(self,method,params,timeout=60):
-        with self.ids:self.counter+=1;ident=self.counter
-        q=queue.Queue();self.pending[ident]=q
-        try:
-            self.send({'id':ident,'method':method,'params':params});msg=q.get(timeout=timeout)
-            if 'error' in msg:raise RuntimeError(msg['error'].get('message','Codex request failed'))
-            return msg['result']
-        finally:self.pending.pop(ident,None)
+        with self.transport:
+            if self.proc is None or self.proc.poll() is not None:self.connect()
+            with self.ids:self.counter+=1;ident=self.counter
+            q=queue.Queue();self.pending[ident]=q
+            try:
+                self.send({'id':ident,'method':method,'params':params});msg=q.get(timeout=timeout)
+                if 'error' in msg:raise RuntimeError(msg['error'].get('message','Codex request failed'))
+                return msg['result']
+            finally:self.pending.pop(ident,None)
 
     def list_chats(self):
         result=self.rpc('thread/list',{'limit':50,'sortKey':'updated_at','sourceKinds':['cli','vscode','appServer','exec','unknown']})
@@ -155,12 +172,13 @@ class Codex:
             if any(x in command for x in ('列出任务','列出聊天','有哪些任务','有哪些聊天','创建聊天','新建聊天','创建一个聊天','新建一个聊天')):
                 self.select(None)
             target=self.selected or self.thread
-            if self.selected:
+            try:
                 try:self.rpc('thread/resume',{'threadId':target,'excludeTurns':True})
                 except RuntimeError as exc:
                     if 'already has an active writer' in str(exc):raise ThreadOwnedError() from exc
                     raise
-            return self._ask(target,text,current)
+                return self._ask(target,text,current)
+            finally:self.release_writer()
 
     def _ask(self,target,text,current):
         result=self.rpc('turn/start',{'threadId':target,'approvalPolicy':'never','sandboxPolicy':{'type':'readOnly'},
@@ -184,4 +202,4 @@ class Codex:
                 return answer
         self.rpc('turn/interrupt',{'threadId':target,'turnId':turn_id});raise TimeoutError('Codex 回答超时')
 
-    def close(self):self.proc.terminate()
+    def close(self):self.release_writer()

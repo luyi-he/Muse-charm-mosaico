@@ -9,13 +9,19 @@ class OwnershipTests(unittest.TestCase):
         c=Codex.__new__(Codex)
         c.operation=threading.Lock();c.selected='desktop-chat';c.thread='controller'
         c.rpc=Mock(side_effect=RuntimeError('thread desktop-chat already has an active writer'))
-        c._ask=Mock();c.select=Mock()
+        c._ask=Mock();c.select=Mock();c.release_writer=Mock()
         return c
 
     def test_busy_chat_never_starts_or_duplicates_request(self):
         c=self.client()
         with self.assertRaisesRegex(ThreadOwnedError,'尚未发送'):c.ask('收取最新邮件',lambda:True)
-        c._ask.assert_not_called();c.select.assert_not_called()
+        c._ask.assert_not_called();c.select.assert_not_called();c.release_writer.assert_called_once()
+        self.assertEqual(c.selected,'desktop-chat')
+
+    def test_successful_turn_releases_writer_and_preserves_id(self):
+        c=self.client();c.rpc=Mock(return_value={});c._ask.return_value='完成'
+        self.assertEqual(c.ask('你好',lambda:True),'完成')
+        c._ask.assert_called_once();c.release_writer.assert_called_once()
         self.assertEqual(c.selected,'desktop-chat')
 
     def test_read_last_answer_does_not_resume_desktop_chat(self):
