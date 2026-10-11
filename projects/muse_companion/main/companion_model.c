@@ -39,7 +39,11 @@ unsigned companion_model_action(companion_model_handle_t m,
         if(!m->s.online || !m->s.paired) {
             m->s.mode=COMP_ERROR;
             snprintf(m->s.error,sizeof(m->s.error),"%s",
+#ifdef COMPANION_LOCAL_CODEX
+                "请启动电脑上的 Codex 桥接程序");
+#else
                 !m->s.paired ? "请先在 Muse App 配对" : "网络未连接，请稍后重试");
+#endif
             return COMP_EFFECT_CANCEL;
         }
         m->s.mode=COMP_LISTENING; return COMP_EFFECT_CANCEL|COMP_EFFECT_BEGIN;

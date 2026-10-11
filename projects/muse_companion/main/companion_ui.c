@@ -178,6 +178,10 @@ static void render(companion_ui_handle_t s)
         checked(s,gsp_companion_settings_page_text_set_text(s->ui,text));
         snprintf(text,sizeof(text),en?"Network %s / Muse %s":"网络 %s · Muse %s",
             m->online?(en?"online":"已连接"):(en?"offline":"未连接"),m->paired?(en?"paired":"已配对"):(en?"unpaired":"未配对"));
+#ifdef COMPANION_LOCAL_CODEX
+        snprintf(text,sizeof(text),"USB Codex %s",m->online?(en?"connected":"已连接"):(en?"offline":"未连接"));
+        checked(s,gsp_companion_settings_phone_setup_set_text(s->ui,en?"USB connection":"USB 连接说明"));
+#endif
         checked(s,gsp_companion_settings_pair_status_set_text(s->ui,text));
         s->previous=*m;s->rendered=true;return;
     }
@@ -194,8 +198,11 @@ static void render(companion_ui_handle_t s)
         checked(s,thought[i](s->ui,!COMPANION_ANIMATED_CHARACTER&&m->mode==COMP_THINKING));
     }
     snprintf(text,sizeof(text),"%s",m->paired?(m->online?(en?"Muse online":"Muse 在线"):(en?"Connecting":"正在连接")):(en?"Pair device":"等待配对"));
+#ifdef COMPANION_LOCAL_CODEX
+    snprintf(text,sizeof(text),"Codex %s",m->online?(en?"USB online":"USB 已连接"):(en?"USB offline":"USB 未连接"));
+#endif
     checked(s,gsp_companion_connection_set_text(s->ui,text));
-    if(m->battery>=0) snprintf(text,sizeof(text),"%d",m->battery);
+    if(m->battery>=0) snprintf(text,sizeof(text),"%d%%",m->battery);
     else snprintf(text,sizeof(text),"--");
     checked(s,gsp_companion_battery_set_text(s->ui,text));
     checked(s,gsp_companion_battery_fill_set_value(s->ui,m->battery<0?0:(m->battery>100?100:m->battery)));
@@ -203,7 +210,7 @@ static void render(companion_ui_handle_t s)
     checked(s,gsp_companion_icon_muted_set_visible(s->ui,m->muted));
     const char *caption=en?"Hi! Want to chat?":"我在，想聊点什么？",*hint=en?"Hold the top AI key to talk":"按住顶部 AI 键说话";
 #ifdef COMPANION_CORES3
-    hint=en?"Hold here to talk":"按住这里说话";
+    hint=en?"Hold to talk":"按住说话";
 #endif
     if(m->mode==COMP_LISTENING) {caption=(en?"Listening...":"我在听…");hint=(en?"Release AI to send":"松开 AI 键发送");}
     else if(m->mode==COMP_THINKING) {caption=(en?"Thinking...":"让我想一想…");hint=(en?"Hold AI to ask again":"按住 AI 键可以重新提问");}
@@ -281,6 +288,11 @@ static void position(companion_ui_handle_t s,unsigned key,int x,int y)
 }
 static void character_motion(companion_ui_handle_t s)
 {
+#ifdef COMPANION_CORES3
+    /* Moving transparent sprites every 100 ms causes visible partial GRAM
+     * repaints on the SPI LCD. Keep each pose stationary on CoreS3. */
+    return;
+#endif
     if(COMPANION_ANIMATED_CHARACTER)return; /* GSP owns GIF playback. */
     if(s->scene_pending||s->current_settings||s->snapshot.settings)return;
     static const unsigned keys[CHARACTER_POSES]={GSP_COMPANION_OBJ_KEY_IDLE,GSP_COMPANION_OBJ_KEY_LISTENING,
@@ -328,7 +340,7 @@ static void character_motion(companion_ui_handle_t s)
 static void event(esp_gsp_handle_t ui,const esp_gsp_event_t *e,void *ctx)
 {
     (void)ui;companion_ui_handle_t s=ctx;
-    fprintf(stderr,"UI event type=%u action=%u arg=%u\n",(unsigned)e->type,(unsigned)e->action_id,(unsigned)e->arg);
+    printf("UI event type=%u action=%u arg=%u\n",(unsigned)e->type,(unsigned)e->action_id,(unsigned)e->arg);
     if(e->type==ESP_GSP_EVENT_SCENE_CHANGED){
         if(s->scene_pending)s->current_settings=s->requested_settings;
         s->scene_pending=false;s->rendered=false;s->motion_pose=-1;render(s);return;
@@ -443,6 +455,13 @@ static void tick(esp_gsp_handle_t ui,void *ctx)
     }
     ++s->tick;render(s);character_motion(s);
 }
+#ifdef COMPANION_CORES3
+static void touch_observer(esp_gsp_handle_t ui,int32_t x,int32_t y,bool pressed,void *ctx)
+{
+    (void)ui;(void)ctx;static bool down;
+    if(down!=pressed){printf("CoreS3 touch x=%ld y=%ld pressed=%u\n",(long)x,(long)y,pressed);down=pressed;}
+}
+#endif
 esp_gsp_err_t companion_ui_create(esp_gsp_handle_t ui,companion_ui_handle_t *out)
 {
     if(!ui||!out) return ESP_GSP_ERR_INVALID_ARG;
@@ -456,6 +475,9 @@ esp_gsp_err_t companion_ui_create(esp_gsp_handle_t ui,companion_ui_handle_t *out
     companion_model_prefs(s->model,s->snapshot.volume,s->snapshot.brightness,s->snapshot.muted);
     companion_model_options(s->model,s->snapshot.language,s->snapshot.sleep_seconds,s->snapshot.speech_rate,s->snapshot.page_seconds);
     checked(s,esp_gsp_on_event(ui,event,s));
+#ifdef COMPANION_CORES3
+    checked(s,esp_gsp_set_pointer_observer(ui,touch_observer,s));
+#endif
     s->timer=esp_gsp_timer_create(ui,UI_TICK_MS,tick,s);
     if(!s->timer) checked(s,ESP_GSP_ERR_NO_MEM);
     render(s);

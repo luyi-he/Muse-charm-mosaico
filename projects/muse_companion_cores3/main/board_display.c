@@ -20,7 +20,7 @@ esp_err_t board_display_init(esp_display_present_target_config_t *target)
             .rotation = ESP_DISPLAY_PRESENT_ROTATE_0, .swap_bytes = true},
         .fb = {.mode = ESP_DISPLAY_PRESENT_MODE_AUTO},
         /* ESP32-S3 SPI uses internal DMA staging, unlike the S31 path. */
-        .drawbuf = {.lines = 12, .in_psram = false, .buffers = 1},
+        .drawbuf = {.lines = 32, .in_psram = false, .buffers = 2},
     };
     return ESP_OK;
 }

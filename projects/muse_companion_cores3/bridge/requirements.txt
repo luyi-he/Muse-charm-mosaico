@@ -1,0 +1,4 @@
+pyserial>=3.5,<4
+faster-whisper>=1.2,<2
+websockets>=15,<18
+av>=16,<18

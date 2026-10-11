@@ -25,18 +25,21 @@ for scene in ("main", "settings"):
         for key in ("y", "h", "radius", "font_size"):
             if key in obj: obj[key] = scale(obj[key], .5)
         if "font_size" in obj: obj["font_size"] = max(12, obj["font_size"])
+        if "font_charset" in obj: obj["font_charset"] += "电脑桥程启动序十太短超二序百USB连接说明"
         name = obj.get("name", "")
         if name in poses:
             obj.update(x={"property": "x", "default": 85, "min": 77, "max": 93},
                        y={"property": "y", "default": 30, "min": 14, "max": 36}, w=150, h=150)
         if name == "pet": obj.update(x=100, y=40, w=120, h=120)
-        if name == "talk": obj.update(x=52, y=208, w=216, h=32)
-        if name in ("talk_hint", "hint"): obj.update(x=18, y=214, w=284, h=18)
+        if name == "talk": obj.update(x=52, y=208, w=216, h=32, bg_color="#D0EBDD", fg_color="#211C19")
+        if name == "talk_hint": obj.update(x=52, y=214, w=216, h=18, fg_color="#211C19")
+        if name == "hint": obj.update(hidden=True)
         if name == "reply_card": obj.update(x=8, y=173, w=304, h=34)
         if name == "caption": obj.update(x=10, y=173, w=300, h=34)
         if name == "reply_text": obj.update(x=12, y=175, w=296, h=15)
         if name == "reply_text_2": obj.update(x=12, y=191, w=296, h=15)
-        if name == "connection": obj.update(x=10, y=4, w=150, h=20)
+        if name == "connection": obj.update(x=10, y=4, w=206, h=20)
+        if name == "battery": obj.update(y=9, h=18)
         if name in ("mute", "settings_open"): obj["h"] = 32
         if name.startswith("heart_"):
             obj["y"] = {"property": "y", "default": 40, "min": 24, "max": 50}

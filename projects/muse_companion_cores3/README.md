@@ -1,35 +1,64 @@
-# Muse Companion for M5Stack CoreS3
+# M5Stack CoreS3 · USB Codex 语音伙伴
 
-CoreS3-specific project sharing the original Muse communication, TTS, credentials,
-settings and character model. The original ESP-Mosaico project remains available
-under `projects/muse_companion`.
+保留原项目的角色和界面，使用 USB 数据线连接本机 Codex CLI。
+CoreS3 版本不连接 Muse 服务，不需要 Muse token、手机配网或设备 Wi-Fi。
+Codex 使用电脑已有的 CLI 登录；推理仍通过该账号连接云端服务。
 
-## Hardware and sources
+## 操作
 
-- [CoreS3 hardware manual](https://docs.m5stack.com/en/core/CoreS3)
-- [Official ESP-IDF BSP tutorial](https://docs.m5stack.com/en/esp_idf/m5cores3/bsp)
+- 录音键是屏幕最底部的绿色「按住说话」区域。按住录音、松开发送，单次最长 20 秒。
+- 右上角喇叭图标切换静音；齿轮打开设置。设置里的音量和亮度支持拖动。
+- CoreS3 的电源/复位键不是 AI 键；GPIO0 是音频 MCLK，不作为录音输入。
+- 电量来自 AXP2101 的电池存在位和 SOC 寄存器；无有效读数时显示 `--`。
+- 保留自动熄屏、触摸唤醒和回复字幕翻页；暂未接入运动唤醒。
+- USB 未连接表示电脑桥接程序未启动、尚未就绪或心跳中断。
+
+## 电脑桥接程序
+
+需要 Windows、Python 3.11 及以上、已登录的 Codex CLI。首次安装：
+
+```powershell
+./projects/muse_companion_cores3/bridge/Setup-Bridge.ps1
+```
+
+启动并保持运行：
+
+```powershell
+./projects/muse_companion_cores3/bridge/Start-Bridge.ps1 -Port COM4
+```
+
+打开 `http://127.0.0.1:8765` 查看状态、识别文字、回答和设备诊断日志，
+也可以输入文字测试对话。默认使用本地 Whisper base（CPU/int8）识别中文，
+默认用 Windows 中文语音朗读，音频通过 USB 在 CoreS3 喇叭播放。
+页面可选填百炼 API Key，切换为 Qwen3-TTS-Flash-Realtime / Cherry。
+千问音频收到后即通过 USB 播放，不等待整段合成完毕。
+诊断日志记录本地识别、Codex 回答和千问首段音频的耗时。
+密钥仅保存在桥接程序内存，关闭程序后需重新填写；也可使用进程环境变量
+`DASHSCOPE_API_KEY`。不向 Codex 发送 TTS 密钥，不将其写入仓库或固件。
+
+桥接程序通过官方 Codex **App Server**（`codex app-server --listen stdio://`）
+调用本机 CLI，使用独立、连续的语音对话，并继承 CLI 的默认模型。
+没有使用 MCP 来反向控制这个编程聊天。语音模式使用只读沙箱，并拒绝工具审批请求。
+程序的状态页仅监听电脑回环地址，不向局域网开放。
+
+## 硬件与开发手册
+
+- [CoreS3 手册](https://docs.m5stack.com/en/core/CoreS3)
+- [官方 BSP 教程](https://docs.m5stack.com/en/esp_idf/m5cores3/bsp)
 - [Espressif CoreS3 BSP](https://github.com/espressif/esp-bsp/tree/master/bsp/m5stack_core_s3)
+- [M5Unified AXP2101 电量读取](https://github.com/m5stack/M5Unified/blob/master/src/utility/power/AXP2101_Class.inl)
+- [Codex App Server](https://learn.chatgpt.com/docs/app-server)
 
-ESP32-S3, 16 MB flash, 8 MB PSRAM; 320x240 LCD, FT6336 touch,
-ES7210 microphone and AW88298 speaker. The BSP owns peripheral pins and power rails.
-GSP owns the UI; no second LVGL display is started. The LCD's staging buffer uses
-internal DMA memory because the S31 PSRAM DMA configuration does not apply to S3.
-Task stacks remain in internal RAM; the complete CJK font stays in flash instead
-of exhausting the CoreS3's 8 MB PSRAM by copying the application and font there.
-The display uses one 12-line internal DMA buffer. Its 64 KB render stack is
-allocated before Wi-Fi starts, avoiding fragmented internal memory at startup.
+ESP32-S3、16 MB Flash、8 MB quad PSRAM，320×240 LCD、FT6336 触摸、
+ES7210 麦克风和 AW88298 喇叭。外设引脚和供电使用官方 BSP。
+屏幕采用两块 32 行内部 DMA 缓冲、全宽分块刷新；角色姿态固定位置，
+避免每 100 ms 移动透明图片产生可见的局部重绘。
+触摸显式轮询；UI 不再受 Muse 首次配置模式锁定。
 
-Hold the on-screen talk button to record; release to send. During Muse pairing,
-pressing this control confirms the active pairing session. The hardware reset
-button is not used as an AI input. Motion wake and battery percentage are not
-connected in this initial port; touch wake and brightness controls remain available.
+## 构建与烧录
 
-## Build
-
-Use ESP-IDF 6.0.3 and its ESP32-S3 tools. GSP 1.4.0 requires IDF >=6.0, so the
-older IDF version used in the CoreS3 tutorial cannot build this application.
-Initialize the pinned submodules from
-the repository root, then activate your IDF environment:
+使用 ESP-IDF 6.0.3，GSP 1.4.0 要求 IDF >=6.0。
+初始化仓库固定版本的子模块并进入 IDF 环境：
 
 ```powershell
 python tools/bootstrap.py
@@ -38,37 +67,13 @@ python projects/muse_companion_cores3/tools/prepare_ui.py
 python submodule/esp-mosaico-utils/mosaico-tools/tools/gsp-sim/fetch_gspc.py
 . C:/Espressif/frameworks/esp-idf-v6.0.3/export.ps1
 idf.py -C projects/muse_companion_cores3 build
+idf.py -C projects/muse_companion_cores3 -p COM4 flash
 ```
 
-The component manager pins CoreS3 BSP 3.0.0 and GSP 1.4.0. `prepare_ui.py`
-generates 320x240 scenes and scaled image assets while preserving the original
-scene names, event bindings and dynamic properties.
-Project-local CMake compatibility settings add the codec's concrete driver
-dependencies and map removed LCD field names to IDF 6 names. Managed dependency
-sources and the original submodules are not patched.
+烧录前备份设备；关闭占用 COM4 的桥接程序或串口监视器。
+使用本工程生成的烧录参数，不整片擦除，也不使用 S31 的 `.irisfw`。
+保留 `sysmeta`（0xc000）、NVS（0x200000）和旧 factory 字节（`legacy_fw`），
+新应用位于 0x210000，UI 位于 0xd00000。旧 Muse 凭据留在 NVS，但本版本不读取它们。
+项目局部 CMake 兼容 IDF6 的 LCD 字段和 codec 驱动依赖，未修改托管组件或子模块。
 
-## Flash and configure
-
-Back up the existing flash before installation. Use this project's generated
-flash arguments; do not use the original S31 `.irisfw` package or whole-chip erase.
-
-```powershell
-idf.py -C projects/muse_companion_cores3 -p COM4 flash monitor
-```
-
-The partition layout retains `sysmeta` at 0xc000, NVS at 0x200000 and the original
-factory bytes as `legacy_fw`. The new factory application runs at 0x210000 and
-the GSP assets at 0xd00000. This is a CoreS3 layout, not a Mosaico Recovery layout.
-Firmware updates use ESP-IDF/esptool. Iris is available over paired TCP after
-network configuration; USB remains the normal Serial/JTAG console.
-
-On first boot, connect to the open `Mochi-Setup-XXXX` Wi-Fi and visit
-`http://192.168.4.1`. Enter your Muse token and TTS credentials, then save and
-pair/configure Wi-Fi through Muse. No credentials are included in the repository.
-
-## Validation
-
-See [device validation](TESTING.md) for build and hardware evidence and the
-remaining account-dependent checks. On first-time setup, a short tone tests
-the speaker and a 16 kHz capture reports microphone read status without saving
-or transmitting the captured samples.
+验证记录见 [TESTING.md](TESTING.md)。原 ESP-Mosaico 工程仍在 `projects/muse_companion`。
