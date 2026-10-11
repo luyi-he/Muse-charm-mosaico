@@ -4,7 +4,8 @@
 #include "companion_setup.h"
 #include "companion_tts.h"
 #include "companion_generation.h"
-#include "bsp/esp_mosaico.h"
+#include "companion_board.h"
+#include "companion_memory.h"
 #include "app.h"
 #include "mosaico_hooks.h"
 #include "muse_chat.h"
@@ -43,7 +44,9 @@ struct runtime_t {
     companion_tts_handle_t tts;
     companion_generation_handle_t generator;
     esp_codec_dev_handle_t mic,spk;
+#ifndef COMPANION_CORES3
     button_handle_t buttons[BSP_BUTTON_NUM];
+#endif
     atomic_uint generation;
     atomic_bool recording,key,overrun,muted,wants_record;
     command_t command;
@@ -214,8 +217,10 @@ static void voice(void *ctx)
     }
 }
 static void sdk(void *ctx){(void)ctx;app_run();vTaskDelete(NULL);}
+#ifndef COMPANION_CORES3
 static void key_changed(void *button,void *ctx)
 {(void)ctx;atomic_store(&runtime->key,iot_button_get_event(button)==BUTTON_PRESS_DOWN);}
+#endif
 esp_err_t companion_runtime_start(void)
 {
     if(runtime)return ESP_ERR_INVALID_STATE;
@@ -236,16 +241,18 @@ esp_err_t companion_runtime_start(void)
      * valid on subsequent startup failure, with maintenance still reachable. */
     runtime=r;
     ESP_RETURN_ON_ERROR(companion_generation_create(&r->generator),"companion","generation service");
+#ifndef COMPANION_CORES3
     int count=0;ESP_RETURN_ON_ERROR(bsp_iot_button_create(r->buttons,&count,BSP_BUTTON_NUM),"companion","buttons");
     ESP_RETURN_ON_ERROR(iot_button_register_cb(r->buttons[BSP_BUTTON_AI],BUTTON_PRESS_DOWN,NULL,key_changed,NULL),"companion","AI press");
     ESP_RETURN_ON_ERROR(iot_button_register_cb(r->buttons[BSP_BUTTON_AI],BUTTON_PRESS_UP,NULL,key_changed,NULL),"companion","AI release");
     r->battery_ready=bsp_battery_init()==ESP_OK;
     if(bsp_imu_init()==ESP_OK){const bsp_imu_config_t cfg=BSP_IMU_CONFIG_DEFAULT();r->imu_ready=bsp_imu_start(&cfg)==ESP_OK;}
-    /* Radio/NVS and preference tasks retain internal stacks. Continuous
-     * codec capture and TTS never perform flash operations; their PSRAM
-     * stacks preserve the SDK's 16 KiB DMA transmission burst margin. */
+#endif
+    /* Radio/NVS and preference tasks retain internal stacks. S31 audio
+     * workers use PSRAM; CoreS3 uses internal stacks because its full font
+     * cannot fit alongside an application copied to 8 MB PSRAM. */
     if(xTaskCreate(sdk,"muse_link",12288,r,4,NULL)!=pdPASS)return ESP_ERR_NO_MEM;
-    if(xTaskCreateWithCaps(capture,"companion_mic",4096,r,5,NULL,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)!=pdPASS)return ESP_ERR_NO_MEM;
+    if(xTaskCreateWithCaps(capture,"companion_mic",4096,r,5,NULL,COMPANION_TASK_STACK_CAPS)!=pdPASS)return ESP_ERR_NO_MEM;
     if(xTaskCreate(voice,"companion_voice",WORKER_STACK,r,4,NULL)!=pdPASS)return ESP_ERR_NO_MEM;
     return ESP_OK;
 nomem:
@@ -270,6 +277,7 @@ void companion_platform_status(bool *online,bool *paired,int *battery,bool *key,
     if(muse_port_initialized()){
         *paired=muse_link_hatch_linked();*online=muse_link_req_ready();
     }
+#ifndef COMPANION_CORES3
     if(r->battery_ready&&r->ui_ms%5000==0){
         bsp_battery_status_t *b=malloc(sizeof(*b));
         if(b){if(bsp_battery_read(b)==ESP_OK)r->battery=b->state_of_charge;free(b);}
@@ -282,6 +290,7 @@ void companion_platform_status(bool *online,bool *paired,int *battery,bool *key,
             r->x=x;r->y=y;r->z=z;r->accel_valid=true;
         }
     }
+#endif
 }
 bool companion_platform_confirm_pairing(void)
 {return muse_port_initialized()&&app_confirm_pairing_press();}

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "companion_tts.h"
+#include "companion_memory.h"
 #include "companion_model.h"
 #include "companion_credentials.h"
 #include "companion_pcm.h"
@@ -171,7 +172,7 @@ esp_err_t companion_tts_create(esp_codec_dev_handle_t spk,
     atomic_init(&t->volume,55);
     if(!t->queue){free(t);return ESP_ERR_NO_MEM;}
     /* Worker owns HTTP + codec only, with no NVS/flash operations. */
-    if(xTaskCreateWithCaps(worker,"companion_tts",TTS_TASK_STACK,t,4,&t->task,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT)!=pdPASS){
+    if(xTaskCreateWithCaps(worker,"companion_tts",TTS_TASK_STACK,t,4,&t->task,COMPANION_TASK_STACK_CAPS)!=pdPASS){
         vQueueDelete(t->queue);free(t);return ESP_ERR_NO_MEM;}
     *out=t;return ESP_OK;
 }

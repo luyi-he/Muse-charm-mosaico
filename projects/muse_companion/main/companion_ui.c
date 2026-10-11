@@ -7,8 +7,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef COMPANION_CORES3
+#define CHARACTER_X 85
+#define CHARACTER_Y 30
+#else
+#define CHARACTER_X 90
+#define CHARACTER_Y 75
+#endif
 enum { UI_TICK_MS=100, PAGE_BYTES=96, LINE_CHARACTERS=18, PAGE_CHARACTERS=36,
-       CHARACTER_X=90, CHARACTER_Y=75, CHARACTER_POSES=8,
+       CHARACTER_POSES=8,
        MAX_PAGE_SECONDS=15 };
 struct companion_ui_t {
     esp_gsp_handle_t ui;
@@ -195,6 +202,9 @@ static void render(companion_ui_handle_t s)
     checked(s,gsp_companion_icon_speaker_set_visible(s->ui,!m->muted));
     checked(s,gsp_companion_icon_muted_set_visible(s->ui,m->muted));
     const char *caption=en?"Hi! Want to chat?":"我在，想聊点什么？",*hint=en?"Hold the top AI key to talk":"按住顶部 AI 键说话";
+#ifdef COMPANION_CORES3
+    hint=en?"Hold here to talk":"按住这里说话";
+#endif
     if(m->mode==COMP_LISTENING) {caption=(en?"Listening...":"我在听…");hint=(en?"Release AI to send":"松开 AI 键发送");}
     else if(m->mode==COMP_THINKING) {caption=(en?"Thinking...":"让我想一想…");hint=(en?"Hold AI to ask again":"按住 AI 键可以重新提问");}
     else if(m->mode==COMP_SLEEPY) {caption=(en?"Taking a little nap...":"我先眯一会儿…");hint=(en?"Pick up, touch or press to wake":"拿起、触摸或按键唤醒");}
@@ -210,6 +220,12 @@ static void render(companion_ui_handle_t s)
             s->auto_pages?(en?"Auto":"自动翻页"):(en?"Manual":"手动翻页"),m->page+1,s->reply_pages);
         hint=m->asleep||m->mode==COMP_SLEEPY?(en?"Touch to keep reading":"轻触屏幕继续阅读"):s->page_hint;
     }
+#ifdef COMPANION_CORES3
+    if(m->mode==COMP_LISTENING)hint=en?"Release to send":"松开发送";
+    else if(m->mode==COMP_THINKING)hint=en?"Hold here to ask again":"按住这里重新提问";
+    else if(m->mode==COMP_ERROR)hint=en?"Hold here to retry":"按住这里重试";
+    else if(m->mode==COMP_SLEEPY)hint=en?"Touch to wake":"触摸唤醒";
+#endif
     checked(s,gsp_companion_reply_card_set_visible(s->ui,reply));
     checked(s,gsp_companion_caption_set_text(s->ui,reply?"":caption));
     char *second=reply?strchr(text,'\n'):NULL;
@@ -293,7 +309,13 @@ static void character_motion(companion_ui_handle_t s)
     if(mode==6){
         static const unsigned hearts[]={GSP_COMPANION_OBJ_KEY_HEART_0,GSP_COMPANION_OBJ_KEY_HEART_1};
         for(unsigned i=0;i<2;++i){
-            gsp_value_t v={.type=GSP_VALUE_I32,.data.i32=105-(int)((t+i*13)%30)};
+            gsp_value_t v={.type=GSP_VALUE_I32,.data.i32=
+#ifdef COMPANION_CORES3
+                50-(int)((t+i*13)%26)
+#else
+                105-(int)((t+i*13)%30)
+#endif
+            };
             checked(s,esp_gsp_component_set_property(s->ui,hearts[i],GSP_PROPERTY_KEY_Y,&v));
         }
     }
@@ -318,7 +340,10 @@ static void event(esp_gsp_handle_t ui,const esp_gsp_event_t *e,void *ctx)
             s->pet_ticks=40;s->greeting_ticks=0;s->rendered=false;render(s);
         }
     }
-    else if(gsp_companion_event_is_ai_press(e)) action(s,COMP_PRESS,0);
+    else if(gsp_companion_event_is_ai_press(e)) {
+        if(companion_platform_confirm_pairing()) action(s,COMP_WAKE,0);
+        else action(s,COMP_PRESS,0);
+    }
     else if(gsp_companion_event_is_ai_release(e)) action(s,COMP_RELEASE,0);
     else if(gsp_companion_event_is_mute(e)) action(s,COMP_MUTE,0);
     else if(gsp_companion_event_is_cancel(e)) action(s,COMP_CANCEL,0);

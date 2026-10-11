@@ -4,11 +4,16 @@ set(sdk_sources app.c ble_server.c wifi_mgr.c wifi_known.c identity.c
     noise_control.cpp noise_tunnel.cpp net_discovery.c
     muse_chat_link.c muse_chat_text.c muse_text.c)
 list(TRANSFORM sdk_sources PREPEND "upstream/")
+if(IDF_TARGET STREQUAL "esp32s3")
+    set(companion_bsp m5stack_core_s3)
+else()
+    set(companion_bsp esp-mosaico-bsp)
+endif()
 idf_component_register(SRCS ${sdk_sources} "mosaico_hooks.c" "tunnel_disabled.c"
     INCLUDE_DIRS "upstream" "."
     REQUIRES nvs_flash esp_wifi esp_event esp_netif esp_http_client app_update
         esp_app_format esp-tls noise_core product_info bt driver esp_driver_gpio
         esp_driver_i2c esp_driver_spi esp_driver_uart esp_driver_ledc esp_lcd lwip
-        mbedtls efuse esp_timer esp-mosaico-bsp companion_credentials)
+        mbedtls efuse esp_timer ${companion_bsp} companion_credentials)
 target_include_directories(${COMPONENT_LIB} PRIVATE "${PROJECT_DIR}/main")
 target_compile_features(${COMPONENT_LIB} PRIVATE cxx_std_17)

@@ -6,6 +6,13 @@
 
 [English](README_EN.md) · [手机配置图文教程](docs/SETUP_CN.md) · [构建](docs/BUILDING.md) · [生成角色](docs/CHARACTERS_CN.md)
 
+## M5Stack CoreS3 适配
+
+CoreS3 使用独立工程 [`projects/muse_companion_cores3`](projects/muse_companion_cores3/README.md)，
+采用板载屏幕、触摸、麦克风和喇叭驱动，界面为 320×240。按住屏幕说话按钮录音，松开发送；
+配对时点此按钮确认。此版本暂未接入电量显示和运动唤醒。
+CoreS3 的构建和烧录步骤见该工程说明，首次服务配置仍可参考手机配置教程。
+
 ## 实机演示
 
 [![点击观看演示视频](docs/assets/setup/12-muse-online.png)](https://github.com/samyeei/Muse-charm-mosaico/raw/refs/heads/main/docs/assets/demo/muse-charm-demo.mp4)
